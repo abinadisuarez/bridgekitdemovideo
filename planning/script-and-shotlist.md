@@ -1,5 +1,7 @@
 # BridgeKit Demo Video — Script + Shot List
 
+**Status: APPROVED (2026-08-11)** — hook visual confirmed as WP Sync sales-page screenshot. Proceeding to Phase 3 (ffmpeg — already installed) and Phase 4 (Playwright recording).
+
 Target length: ~5:30–6:00 (top of the 4–6 min target — narration was expanded per feedback; flag if this needs trimming elsewhere)
 Voice: ElevenLabs "Mark" (UgBBYS2sOqTuMpoF3BR0)
 Site: https://bridgekit.misanmorrison.com/ (password: BridgeKit2026!) — gate unlock shown on-screen
@@ -12,7 +14,7 @@ Total spoken narration: ~700 words (~4:40 at ~150 wpm) + UI interaction/pause ti
 **Narration:**
 > "WP Sync promises to connect the apps you already use — leads, sales, webinars — into one automatic flow. But moving the data is only half the job. WP Sync doesn't tell you which bridge to build first, what to actually send once a lead lands in your list, or what waiting on either one is costing you. That's the gap BridgeKit fills."
 
-**On screen:** Static title card — "BridgeKit — WP Sync Companion Toolkit" on gradient background (matches site's brand mark/colors). No live UI yet.
+**On screen:** WP Sync's own sales page hero (`assets/wpsync-hero.png`) — the "50% OFF" launch banner, "The Simple 'Set & Forget' System..." headline, and the "150+ apps · unlimited automations · one payment" line. Slow zoom/pan across the headline and subhead while the VO plays, then cut to the BridgeKit browser (Beat 1). No text-only title card.
 
 ---
 
@@ -114,6 +116,6 @@ Total spoken narration: ~700 words (~4:40 at ~150 wpm) + UI interaction/pause ti
 ## Notes / open questions for approval
 
 - **Pacing:** spoken narration is now ~4:40; the remaining ~50s–1:20 comes from real UI interaction time (typing each field, dropdown selection, click-to-render pauses) plus holds on output — matches the skill's guidance to pace recording pauses against narration, not pad with dead air. This puts total runtime near the top of the 4–6 min target — say if beat 0 or beat 7 should be trimmed to make room.
-- **Hook visual (Beat 0):** no WP Sync sales page is available to screen-record, so the hook opens on a static title card rather than live WP Sync footage. Fine to proceed this way, or flag if a WP Sync screenshot/asset should be sourced instead.
+- **Hook visual (Beat 0):** now uses the real WP Sync sales-page hero screenshot (`assets/wpsync-hero.png`), provided by the user and saved to the repo.
 - **One example set per tool** (not multiple business types / multiple scenarios) to keep runtime in range — all three example inputs were run against the live app's actual logic above, so the on-screen numbers/output will match exactly what's shown here.
 - Password is shown being typed on-screen per your instruction (not skipped/blurred).
