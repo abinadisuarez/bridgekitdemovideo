@@ -53,9 +53,9 @@ const PAGE_INIT = `
       position: fixed; top: -80px; left: -80px; width: 28px; height: 38px;
       background: url('${CURSOR_SVG}') no-repeat center / 100% 100%;
       pointer-events: none; z-index: 2147483647;
-      transition: transform 90ms ease-out;
+      transition: transform 110ms ease-out;
     }
-    #__fake-cursor.__pressed { transform: scale(0.85); }
+    #__fake-cursor.__pressed { transform: scale(0.5); }
     #__fake-dropdown {
       position: fixed; background: #fff; border: 1px solid #d9d9e3;
       border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
@@ -75,7 +75,7 @@ const PAGE_INIT = `
   document.addEventListener('mouseup', () => cur.classList.remove('__pressed'), true);
   window.__pressCursor = () => {
     cur.classList.add('__pressed');
-    setTimeout(() => cur.classList.remove('__pressed'), 120);
+    setTimeout(() => cur.classList.remove('__pressed'), 180);
   };
 
   window.__openDropdown = (selector) => {
@@ -151,22 +151,29 @@ function logClick(ctx) {
   ctx.clicks.push(round((Date.now() - ctx.beatStart) / 1000));
 }
 
+// Post-click settle time is deliberately generous (350ms) — the site's own
+// CSS transitions (checkbox fill, tab pill color) need to fully finish and
+// be captured on screen before the segment boundary is logged, or a
+// freeze-frame pad in assembly can land mid-transition and freeze on a
+// half-colored state.
+const CLICK_SETTLE_MS = 350;
+
 async function clickAnimated(page, selector, ctx) {
   await moveTo(page, selector);
   await page.mouse.down();
-  await page.waitForTimeout(70);
+  await page.waitForTimeout(110);
   await page.mouse.up();
   logClick(ctx);
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(CLICK_SETTLE_MS);
 }
 
 async function typeAnimated(page, selector, text, ctx) {
   await moveTo(page, selector);
   await page.mouse.down();
-  await page.waitForTimeout(60);
+  await page.waitForTimeout(100);
   await page.mouse.up();
   logClick(ctx);
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(250);
   await page.type(selector, text, { delay: TYPE_DELAY });
 }
 
@@ -176,7 +183,7 @@ async function typeAnimated(page, selector, text, ctx) {
 async function selectAnimated(page, selector, value, ctx) {
   await moveTo(page, selector);
   await page.mouse.down();
-  await page.waitForTimeout(70);
+  await page.waitForTimeout(110);
   await page.mouse.up();
   logClick(ctx);
   await page.evaluate((sel) => window.__openDropdown(sel), selector);
@@ -187,12 +194,12 @@ async function selectAnimated(page, selector, value, ctx) {
     await page.waitForTimeout(250);
   }
   await page.mouse.down();
-  await page.waitForTimeout(60);
+  await page.waitForTimeout(110);
   await page.mouse.up();
   logClick(ctx);
   await page.evaluate(() => window.__closeDropdown());
   await page.selectOption(selector, value);
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(CLICK_SETTLE_MS);
 }
 
 async function scrollToAnimated(page, selector, ms) {
