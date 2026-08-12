@@ -73,7 +73,7 @@ const PAGE_INIT = `
   const style = document.createElement('style');
   style.textContent = \`
     #__fake-cursor {
-      position: fixed; top: -100px; left: -100px; width: 40px; height: 54px;
+      position: fixed; top: -100px; left: -100px; width: 40px; height: 46px;
       background: url('${CURSOR_SVG}') no-repeat center / 100% 100%;
       pointer-events: none; z-index: 2147483647;
       transition: transform 110ms ease-out;
@@ -119,13 +119,16 @@ const PAGE_INIT = `
   // where the real click lands. The SVG tip sits right at the viewBox's
   // corner (see CURSOR_SVG above, and note preserveAspectRatio="none" there
   // is required — without it the browser letterboxes the square viewBox
-  // inside this non-square 40x54 box instead of stretching it, silently
-  // adding ~7px of unaccounted vertical offset). This residual offset was
-  // measured empirically (render to a real screenshot, scan for the first
-  // dark pixel) rather than derived from viewBox math, which proved
-  // unreliable here.
-  const CURSOR_TIP_OFFSET_X = 3;
-  const CURSOR_TIP_OFFSET_Y = 6;
+  // inside this non-square 40x46 box instead of stretching it, silently
+  // adding unaccounted vertical offset). This offset was measured
+  // empirically (render to a real screenshot, scan for the first dark
+  // pixel) rather than derived from viewBox math, which proved unreliable
+  // here. Box is 40x46 (not 40x54) — 54 stretched the 24x24 SVG too far
+  // vertically and made the arrow look elongated; 46 is the tallest height
+  // that still reads as a normal arrow cursor. Re-measure these two
+  // constants any time CURSOR_SVG's viewBox or the box's width/height change.
+  const CURSOR_TIP_OFFSET_X = 2;
+  const CURSOR_TIP_OFFSET_Y = 0;
   window.__fireRing = (x, y) => {
     ring.style.left = x + CURSOR_TIP_OFFSET_X + 'px';
     ring.style.top = y + CURSOR_TIP_OFFSET_Y + 'px';
