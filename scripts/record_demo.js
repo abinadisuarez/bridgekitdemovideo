@@ -49,11 +49,20 @@ const OUTPUT_DIR = path.join(__dirname, "..", "recordings");
 const VIEWPORT = { width: 1920, height: 1080 };
 const TYPE_DELAY = 55;
 
+// Tip vertex placed at (1,1) — deliberately right in the viewBox's corner
+// (1 unit of margin only, just enough for the stroke to render without
+// clipping) — instead of the original (4,2), which put visible daylight
+// between the div's anchor point (= the actual click coordinate) and where
+// the arrow appeared to point. A real OS cursor's hotspot IS its visual
+// tip; this makes that true here too, instead of compensating for a gap
+// with an offset constant (which can't work for small targets anyway — a
+// 15px checkbox is smaller than any reasonable offset from a 40x54 cursor's
+// corner).
 const CURSOR_SVG =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' +
-      '<path d="M4 2 L4 20 L9 15.2 L12.4 21.6 L15.1 20.2 L11.6 14 L18 14 Z" fill="#000" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" preserveAspectRatio="none">' +
+      '<path d="M1 1 L1 19 L6 14.2 L9.4 20.6 L12.1 19.2 L8.6 13 L15 13 Z" fill="#000" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>' +
       "</svg>"
   );
 
@@ -93,19 +102,33 @@ const PAGE_INIT = `
     #__fake-dropdown .__opt { padding: 9px 12px; }
   \`;
   document.head.appendChild(style);
-  const cur = document.createElement('div');
-  cur.id = '__fake-cursor';
-  document.body.appendChild(cur);
+  // Ring appended BEFORE the cursor, in addition to its lower z-index — two
+  // independent guarantees the cursor paints on top, not one relying on
+  // z-index alone.
   const ring = document.createElement('div');
   ring.id = '__click-ring';
   document.body.appendChild(ring);
+  const cur = document.createElement('div');
+  cur.id = '__fake-cursor';
+  document.body.appendChild(cur);
   document.addEventListener('mousemove', (e) => {
     cur.style.left = e.clientX + 'px';
     cur.style.top = e.clientY + 'px';
   }, true);
+  // The cursor div is anchored at its top-left corner (e.clientX/Y), matching
+  // where the real click lands. The SVG tip sits right at the viewBox's
+  // corner (see CURSOR_SVG above, and note preserveAspectRatio="none" there
+  // is required — without it the browser letterboxes the square viewBox
+  // inside this non-square 40x54 box instead of stretching it, silently
+  // adding ~7px of unaccounted vertical offset). This residual offset was
+  // measured empirically (render to a real screenshot, scan for the first
+  // dark pixel) rather than derived from viewBox math, which proved
+  // unreliable here.
+  const CURSOR_TIP_OFFSET_X = 3;
+  const CURSOR_TIP_OFFSET_Y = 6;
   window.__fireRing = (x, y) => {
-    ring.style.left = x + 'px';
-    ring.style.top = y + 'px';
+    ring.style.left = x + CURSOR_TIP_OFFSET_X + 'px';
+    ring.style.top = y + CURSOR_TIP_OFFSET_Y + 'px';
     ring.classList.remove('__firing');
     void ring.offsetWidth; // restart the CSS animation
     ring.classList.add('__firing');
