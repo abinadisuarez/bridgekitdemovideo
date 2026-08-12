@@ -1,0 +1,17 @@
+[
+  {
+    "index": 1,
+    "text": "The How to Use tab lays out the order: BridgeBlueprint first, to decide what to build.",
+    "dir": "seg01"
+  },
+  {
+    "index": 2,
+    "text": "FollowUp Forge next, to write what you send once it's built.",
+    "dir": "seg02"
+  },
+  {
+    "index": 3,
+    "text": "And LeakCalc, to see what waiting is costing you.",
+    "dir": "seg03"
+  }
+]

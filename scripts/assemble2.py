@@ -89,11 +89,16 @@ def build_beat(beat_name, beat_dir):
         idx = seg["index"]
         seg_rec_dir = rec_dir / seg["dir"]
         webm = next(seg_rec_dir.glob("*.webm"))
-        clicks = json.loads((seg_rec_dir / "clicks.json").read_text())
+        click_data = json.loads((seg_rec_dir / "clicks.json").read_text())
+        visible_start = click_data["visibleStart"]
+        clicks = [round(c - visible_start, 3) for c in click_data["clicks"]]
 
+        # Trim off the setup/replay prefix — recordVideo captures from
+        # context creation, so everything before this segment's own visible
+        # action (silently replaying prior segments' state) is on tape too.
         seg_video_raw = beat_dir / f"seg{idx:02d}_video_raw.mp4"
-        run(["ffmpeg", "-y", "-v", "error", "-i", str(webm), "-r", str(FPS),
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(seg_video_raw)])
+        run(["ffmpeg", "-y", "-v", "error", "-i", str(webm), "-ss", str(visible_start),
+             "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(seg_video_raw)])
 
         seg_audio_raw = ROOT / "audio" / "segments" / beat_name / f"seg-{idx:02d}.mp3"
         seg_audio_wc = beat_dir / f"seg{idx:02d}_audio.mp3"

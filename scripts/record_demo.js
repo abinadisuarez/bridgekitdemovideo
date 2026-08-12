@@ -176,9 +176,34 @@ async function centerCursor(page) {
   await page.mouse.move(VIEWPORT.width / 2, VIEWPORT.height / 2);
 }
 
+// Smoothly pans to an element only if it's actually out of view (a no-op
+// otherwise) — every scroll in this recorder used to be an instant snap
+// (scrollIntoViewIfNeeded, scrollTo with no behavior), which is what made
+// the whole video read as a series of jump-cuts instead of a real screen
+// recording. This animates like a real trackpad/mouse-wheel scroll would.
+async function smoothScrollIntoView(page, selector, index) {
+  const scrolled = await page.evaluate(
+    ([sel, idx]) => {
+      const el = idx == null ? document.querySelector(sel) : document.querySelectorAll(sel)[idx];
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const inView = r.top >= 0 && r.bottom <= window.innerHeight;
+      if (!inView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return !inView;
+    },
+    [selector, index === undefined ? null : index]
+  );
+  if (scrolled) await page.waitForTimeout(650);
+}
+
+async function smoothScrollToTop(page) {
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  await page.waitForTimeout(650);
+}
+
 async function moveTo(page, selector) {
   const loc = page.locator(selector);
-  await loc.scrollIntoViewIfNeeded();
+  await smoothScrollIntoView(page, selector);
   const box = await loc.boundingBox();
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -245,7 +270,7 @@ async function selectAnimated(page, selector, value, ctx) {
 }
 
 async function scrollToAnimated(page, selector, ms) {
-  await page.locator(selector).scrollIntoViewIfNeeded();
+  await smoothScrollIntoView(page, selector);
   await page.waitForTimeout(ms || 300);
 }
 
@@ -371,12 +396,16 @@ const BEATS = [
           await clickAnimated(page, "#bpGenerate", ctx);
           await page.waitForSelector("#bpOutput .bridge-item");
           // Checking boxes further down the list scrolled the page down —
-          // jump back to the top so the "Your build order" panel and its
+          // pan back to the top so the "Your build order" panel and its
           // header are visible, not just wherever the last checkbox was.
-          await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+          await smoothScrollToTop(page);
           await hold(page, 600);
         },
         replay: async (page) => {
+          // Replay is silent/off-camera (state restore before this
+          // segment's own visible action) — instant here is correct, the
+          // explicit scroll-position restore right after replay handles
+          // what's actually shown on screen.
           await page.click("#bpGenerate");
           await page.waitForSelector("#bpOutput .bridge-item");
           await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
@@ -386,11 +415,10 @@ const BEATS = [
         text:
           "Every bridge comes with a plain-English reason attached, so you're not guessing why one ranks above another — and because it's built off your actual business type and your actual app stack, you're not getting generic advice, you're getting your build order.",
         action: async (page) => {
-          const items = page.locator("#bpOutput .bridge-item");
-          const count = await items.count();
-          await items.nth(Math.min(1, count - 1)).scrollIntoViewIfNeeded();
+          const count = await page.locator("#bpOutput .bridge-item").count();
+          await smoothScrollIntoView(page, "#bpOutput .bridge-item", Math.min(1, count - 1));
           await hold(page, 500);
-          await items.nth(count - 1).scrollIntoViewIfNeeded();
+          await smoothScrollIntoView(page, "#bpOutput .bridge-item", count - 1);
           await hold(page, 400);
         },
       },
@@ -441,7 +469,7 @@ const BEATS = [
         action: async (page, ctx) => {
           await clickAnimated(page, "#ffGenerate", ctx);
           await page.waitForSelector("#ffOutput .email-block");
-          await page.locator("#ffOutput .email-block").first().scrollIntoViewIfNeeded();
+          await smoothScrollIntoView(page, "#ffOutput .email-block", 0);
           await hold(page, 500);
         },
         replay: async (page) => {
@@ -453,10 +481,9 @@ const BEATS = [
         text:
           "Three emails, ready to paste into your autoresponder: Day 2 names the problem, Day 5 makes the cost of waiting concrete, Day 14 closes the sale.",
         action: async (page) => {
-          const blocks = page.locator("#ffOutput .email-block");
-          await blocks.nth(1).scrollIntoViewIfNeeded();
+          await smoothScrollIntoView(page, "#ffOutput .email-block", 1);
           await hold(page, 500);
-          await blocks.nth(2).scrollIntoViewIfNeeded();
+          await smoothScrollIntoView(page, "#ffOutput .email-block", 2);
           await hold(page, 400);
         },
       },
@@ -525,9 +552,8 @@ const BEATS = [
         text:
           "And if you're paying for Zapier, Make, or Pabbly, it lines that cost up against WP Sync's one-time price, five years out. In this example: nearly $2,900 saved by switching.",
         action: async (page) => {
-          const tiles = page.locator("#lcOutput .stat-tile");
-          const count = await tiles.count();
-          await tiles.nth(count - 1).scrollIntoViewIfNeeded();
+          const count = await page.locator("#lcOutput .stat-tile").count();
+          await smoothScrollIntoView(page, "#lcOutput .stat-tile", count - 1);
           await hold(page, 600);
         },
       },
@@ -649,6 +675,14 @@ const BEATS = [
         await page.waitForTimeout(150);
       }
 
+      // recordVideo captures from context creation onward — setup + replay
+      // above are NOT actually invisible, they're just fast; with several
+      // chained replay steps (each with Playwright's own actionability
+      // waits) that "fast" can still be a real 1-3s of visible-on-camera
+      // navigation/clicking before this segment's own action even starts.
+      // Mark the boundary and trim everything before it out in assembly.
+      const visibleStart = round((Date.now() - beatStart) / 1000);
+
       await seg.action(page, ctx);
       await page.waitForTimeout(300);
 
@@ -663,7 +697,10 @@ const BEATS = [
 
       await context.close(); // video only finalizes to disk on context close
 
-      fs.writeFileSync(path.join(segDir, "clicks.json"), JSON.stringify(ctx.clicks));
+      fs.writeFileSync(
+        path.join(segDir, "clicks.json"),
+        JSON.stringify({ visibleStart, clicks: ctx.clicks })
+      );
       manifest.push({ index: i + 1, text: seg.text, dir: `seg${String(i + 1).padStart(2, "0")}` });
       if (seg.replay) replaysSoFar.push(seg.replay);
       console.log(`  ${beat.name} seg${String(i + 1).padStart(2, "0")}: ${ctx.clicks.length} click(s)`);

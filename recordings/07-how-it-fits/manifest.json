@@ -1,0 +1,22 @@
+[
+  {
+    "index": 1,
+    "text": "None of this competes with WP Sync — it's the piece that picks up right where WP Sync leaves off.",
+    "dir": "seg01"
+  },
+  {
+    "index": 2,
+    "text": "WP Sync builds the bridge and moves the data.",
+    "dir": "seg02"
+  },
+  {
+    "index": 3,
+    "text": "BridgeKit tells you which bridge to build first, writes what goes down that bridge, and shows you what it's worth.",
+    "dir": "seg03"
+  },
+  {
+    "index": 4,
+    "text": "Together, that's the difference between having the plumbing installed and actually turning on the water.",
+    "dir": "seg04"
+  }
+]

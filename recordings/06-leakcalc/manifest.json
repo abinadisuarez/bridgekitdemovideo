@@ -1,0 +1,52 @@
+[
+  {
+    "index": 1,
+    "text": "Last, LeakCalc.",
+    "dir": "seg01"
+  },
+  {
+    "index": 2,
+    "text": "Enter 100 monthly leads,",
+    "dir": "seg02"
+  },
+  {
+    "index": 3,
+    "text": "a 40% drop-off,",
+    "dir": "seg03"
+  },
+  {
+    "index": 4,
+    "text": "$2 a month in subscriber value,",
+    "dir": "seg04"
+  },
+  {
+    "index": 5,
+    "text": "and a $49 a month tool you're already paying for.",
+    "dir": "seg05"
+  },
+  {
+    "index": 6,
+    "text": "Click Calculate.",
+    "dir": "seg06"
+  },
+  {
+    "index": 7,
+    "text": "LeakCalc turns that into real numbers — leads lost per month, per year, and the dollar value at risk.",
+    "dir": "seg07"
+  },
+  {
+    "index": 8,
+    "text": "And if you're paying for Zapier, Make, or Pabbly, it lines that cost up against WP Sync's one-time price, five years out. In this example: nearly $2,900 saved by switching.",
+    "dir": "seg08"
+  },
+  {
+    "index": 9,
+    "text": "These aren't generic industry averages — they're built from your own numbers, so the case for automating today instead of someday is one you can see, save, and even show a partner or a skeptical spouse.",
+    "dir": "seg09"
+  },
+  {
+    "index": 10,
+    "text": "It's the number that turns 'I should get to that' into 'I'm losing money every month I don't.'",
+    "dir": "seg10"
+  }
+]
