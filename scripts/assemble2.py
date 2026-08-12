@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Phase 6 (segment-level) assembly.
+"""Phase 6 (segment-level) assembly — per-segment isolated recordings.
 
-For each beat: cut its single continuous recording into per-segment clips
-using recordings/<beat>/segments.json boundaries, mix the synthesized click
-sound into each segment's voiceover at logged click moments
-(recordings/<beat>/clicks.json, rebased to segment-relative time), pad
-whichever of video/audio is shorter (freeze last video frame, or add
-silence) so every segment is exactly matched, then concatenate segments
-within a beat (hard cut — same continuous screen) and finally concatenate
-all beats together with a crossfade transition (video: xfade, audio:
-acrossfade).
+Each beat's recordings/<beat>/manifest.json lists its segments in order;
+each segment already has its own isolated, short webm (recordings/<beat>/
+segNN/*.webm) and its own clicks.json (already segment-relative — no
+rebasing needed, unlike the earlier single-continuous-recording design).
+
+For each segment: mix the synthesized click sound into its voiceover clip
+at the logged click moments, pad whichever of video/audio is shorter
+(freeze last video frame, or add silence) so the two match exactly, then
+concatenate all of a beat's segments (hard cut — continuous same screen)
+and finally concatenate all beats together with a crossfade transition
+(video: xfade, audio: acrossfade).
 
 Usage: assemble2.py <output.mp4> <beat-name> [beat-name ...]
        (use "00-hook" for the WP Sync screenshot hook beat)
 """
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -40,7 +43,7 @@ def dur(path):
 
 def mix_clicks(voice_path, click_times, click_wav, out_path):
     if not click_times:
-        run(["cp", str(voice_path), str(out_path)])
+        shutil.copyfile(voice_path, out_path)
         return
     cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(voice_path)]
     for _ in click_times:
@@ -77,65 +80,58 @@ def build_hook(beat_dir):
 
 def build_beat(beat_name, beat_dir):
     rec_dir = ROOT / "recordings" / beat_name
-    segments = json.loads((rec_dir / "segments.json").read_text())
-    clicks = json.loads((rec_dir / "clicks.json").read_text())
-    webm = next(rec_dir.glob("*.webm"))
+    manifest = json.loads((rec_dir / "manifest.json").read_text())
     click_wav = ROOT / "assets" / "click.wav"
-
-    raw_mp4 = beat_dir / "raw.mp4"
     beat_dir.mkdir(parents=True, exist_ok=True)
-    run(["ffmpeg", "-y", "-v", "error", "-i", str(webm), "-r", str(FPS),
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(raw_mp4)])
 
     seg_finals = []
-    t_start = 0.0
-    for i, seg in enumerate(segments, start=1):
-        t_end = seg["tEnd"]
-        seg_video_raw = beat_dir / f"seg{i:02d}_video_raw.mp4"
-        run(["ffmpeg", "-y", "-v", "error", "-i", str(raw_mp4),
-             "-ss", str(t_start), "-to", str(t_end),
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(seg_video_raw)])
+    for seg in manifest:
+        idx = seg["index"]
+        seg_rec_dir = rec_dir / seg["dir"]
+        webm = next(seg_rec_dir.glob("*.webm"))
+        clicks = json.loads((seg_rec_dir / "clicks.json").read_text())
 
-        seg_clicks = [round(c - t_start, 3) for c in clicks if t_start <= c < t_end]
-        seg_audio_raw = ROOT / "audio" / "segments" / beat_name / f"seg-{i:02d}.mp3"
-        seg_audio_wc = beat_dir / f"seg{i:02d}_audio.mp3"
-        mix_clicks(seg_audio_raw, seg_clicks, click_wav, seg_audio_wc)
+        seg_video_raw = beat_dir / f"seg{idx:02d}_video_raw.mp4"
+        run(["ffmpeg", "-y", "-v", "error", "-i", str(webm), "-r", str(FPS),
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(seg_video_raw)])
+
+        seg_audio_raw = ROOT / "audio" / "segments" / beat_name / f"seg-{idx:02d}.mp3"
+        seg_audio_wc = beat_dir / f"seg{idx:02d}_audio.mp3"
+        mix_clicks(seg_audio_raw, clicks, click_wav, seg_audio_wc)
 
         v_dur = dur(seg_video_raw)
         a_dur = dur(seg_audio_wc)
-        seg_video_final = beat_dir / f"seg{i:02d}_video.mp4"
-        seg_audio_final = beat_dir / f"seg{i:02d}_audiopad.mp3"
+        seg_video_final = beat_dir / f"seg{idx:02d}_video.mp4"
+        seg_audio_final = beat_dir / f"seg{idx:02d}_audiopad.mp3"
         if a_dur > v_dur + 0.03:
             pad = a_dur - v_dur
             run(["ffmpeg", "-y", "-v", "error", "-i", str(seg_video_raw),
                  "-vf", f"tpad=stop_mode=clone:stop_duration={pad}",
                  "-c:v", "libx264", "-pix_fmt", "yuv420p", str(seg_video_final)])
-            run(["cp", str(seg_audio_wc), str(seg_audio_final)])
+            shutil.copyfile(seg_audio_wc, seg_audio_final)
         elif v_dur > a_dur + 0.03:
             pad = v_dur - a_dur
             run(["ffmpeg", "-y", "-v", "error", "-i", str(seg_audio_wc),
                  "-af", f"apad=pad_dur={pad}", "-c:a", "mp3", str(seg_audio_final)])
-            run(["cp", str(seg_video_raw), str(seg_video_final)])
+            shutil.copyfile(seg_video_raw, seg_video_final)
         else:
-            run(["cp", str(seg_video_raw), str(seg_video_final)])
-            run(["cp", str(seg_audio_wc), str(seg_audio_final)])
+            shutil.copyfile(seg_video_raw, seg_video_final)
+            shutil.copyfile(seg_audio_wc, seg_audio_final)
 
-        seg_final = beat_dir / f"seg{i:02d}_final.mp4"
+        seg_final = beat_dir / f"seg{idx:02d}_final.mp4"
         run(["ffmpeg", "-y", "-v", "error", "-i", str(seg_video_final), "-i", str(seg_audio_final),
              "-c:v", "copy", "-c:a", "aac", "-shortest", str(seg_final)])
         seg_finals.append(seg_final)
-        t_start = t_end
 
-    # Concatenate this beat's segments (hard cut — continuous same screen).
     beat_final = beat_dir / "final.mp4"
     if len(seg_finals) == 1:
-        run(["cp", str(seg_finals[0]), str(beat_final)])
+        shutil.copyfile(seg_finals[0], beat_final)
     else:
         inputs = []
         filt = ""
-        for idx, sf in enumerate(seg_finals):
+        for i, sf in enumerate(seg_finals):
             inputs += ["-i", str(sf)]
-            filt += f"[{idx}:v][{idx}:a]"
+            filt += f"[{i}:v][{i}:a]"
         filt += f"concat=n={len(seg_finals)}:v=1:a=1[outv][outa]"
         run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", filt,
              "-map", "[outv]", "-map", "[outa]",
@@ -145,7 +141,7 @@ def build_beat(beat_name, beat_dir):
 
 def crossfade_chain(clips, out_path):
     if len(clips) == 1:
-        run(["cp", str(clips[0]), str(out_path)])
+        shutil.copyfile(clips[0], out_path)
         return
     durations = [dur(c) for c in clips]
     inputs = []

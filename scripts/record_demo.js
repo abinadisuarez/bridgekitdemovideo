@@ -1,28 +1,42 @@
 /**
- * BridgeKit demo video — screen recording (Playwright), segment-level.
+ * BridgeKit demo video — screen recording (Playwright), per-segment isolated.
  *
  * Every beat's approved narration is split into clause-level segments, each
- * paired 1:1 with the specific on-screen action it describes. The recorder
- * logs a timestamp after every segment's action completes (segments.json),
- * which Phase 6 assembly uses to cut the beat's single continuous recording
- * into per-segment clips and pad each one to its own matched voiceover clip
- * — so narration and action stay synced at every step, not just at the
- * start/end of a whole beat. clicks.json (subset of those same moments, the
- * ones that are real clicks) drives the click-sound mix.
+ * paired 1:1 with the specific on-screen action it describes. EACH SEGMENT
+ * IS RECORDED IN ITS OWN FRESH BROWSER CONTEXT — not cut out of one long
+ * continuous recording. This was a hard-learned fix: headless Chromium's
+ * screencast-based video recorder is not guaranteed real-time, and under
+ * sustained DOM churn (many clicks, dropdown open/close, repeated style
+ * updates) it measurably falls behind wall-clock — verified by extracting
+ * exact frame numbers and comparing against Date.now()-logged timestamps,
+ * the drift compounded to 1-2+ seconds by the middle of a 9-segment beat.
+ * A single continuous recording cut by timestamp cannot be trusted to stay
+ * in sync. Recording each segment as its own short, fresh context sidesteps
+ * the problem entirely (frame 0 = context creation, negligible lag over a
+ * few seconds) at the cost of more browser churn.
  *
- * Cursor: plain arrow (28x38, black fill / white outline), anchored at the
- * tip like a native OS pointer, brief press/scale on click — matches the
- * style used in the reference Landed demo video. Every beat with a cursor
- * silently jumps it to screen-center right after injecting it, before the
- * first real glide, so it never visibly travels in from a corner.
+ * Because each segment starts from a fresh page load, any segment whose
+ * action leaves persistent state on screen (a checked box, a filled field,
+ * a generated output) declares a `replay` function — a fast, unanimated
+ * re-application of that same state, run silently at the start of every
+ * later segment in the same beat so the accumulated progress is still
+ * visible, before that segment's own animated action begins.
+ *
+ * Cursor: plain arrow (40x54, black fill / white outline), anchored at the
+ * tip like a native OS pointer. Click feedback: a brief press/scale on the
+ * cursor plus an expanding colored ring at the click point, synced with the
+ * click-sound mix in Phase 6. Every beat with a cursor silently jumps it to
+ * screen-center right after injecting it, before the first real glide, so
+ * it never visibly travels in from a corner.
  *
  * Dropdowns: native <select> popups aren't reliably captured by Chromium's
- * headless recordVideo, so a styled overlay list (matching the reference:
- * white rows, selected item highlighted solid purple) is rendered before
- * the cursor "clicks" the target option.
+ * headless recordVideo, so a styled overlay list (white rows, selected item
+ * highlighted solid purple) is rendered before the cursor "clicks" the
+ * target option.
  *
- * RUN: node record_demo.js
- * OUTPUT: recordings/<beat-name>/*.webm + segments.json + clicks.json
+ * RUN: node record_demo.js [ONLY_BEATS=01-x,02-y env var to filter]
+ * OUTPUT: recordings/<beat-name>/manifest.json (segment texts, in order)
+ *         recordings/<beat-name>/segNN/*.webm + clicks.json
  */
 
 const { chromium } = require("/opt/node22/lib/node_modules/playwright");
@@ -50,12 +64,27 @@ const PAGE_INIT = `
   const style = document.createElement('style');
   style.textContent = \`
     #__fake-cursor {
-      position: fixed; top: -80px; left: -80px; width: 28px; height: 38px;
+      position: fixed; top: -100px; left: -100px; width: 40px; height: 54px;
       background: url('${CURSOR_SVG}') no-repeat center / 100% 100%;
       pointer-events: none; z-index: 2147483647;
       transition: transform 110ms ease-out;
     }
     #__fake-cursor.__pressed { transform: scale(0.5); }
+    #__click-ring {
+      position: fixed; width: 16px; height: 16px; margin-left: -8px; margin-top: -8px;
+      border-radius: 50%; border: 3px solid #4636E3;
+      background: rgba(70, 54, 227, 0.16);
+      pointer-events: none; z-index: 2147483646;
+      opacity: 0; transform: scale(0.4);
+    }
+    #__click-ring.__firing {
+      animation: __ring-pop 420ms cubic-bezier(.2,.8,.2,1) forwards;
+    }
+    @keyframes __ring-pop {
+      0%   { opacity: 0.9; transform: scale(0.4); }
+      60%  { opacity: 0.7; }
+      100% { opacity: 0; transform: scale(2.6); }
+    }
     #__fake-dropdown {
       position: fixed; background: #fff; border: 1px solid #d9d9e3;
       border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
@@ -67,15 +96,30 @@ const PAGE_INIT = `
   const cur = document.createElement('div');
   cur.id = '__fake-cursor';
   document.body.appendChild(cur);
+  const ring = document.createElement('div');
+  ring.id = '__click-ring';
+  document.body.appendChild(ring);
   document.addEventListener('mousemove', (e) => {
     cur.style.left = e.clientX + 'px';
     cur.style.top = e.clientY + 'px';
   }, true);
-  document.addEventListener('mousedown', () => cur.classList.add('__pressed'), true);
+  window.__fireRing = (x, y) => {
+    ring.style.left = x + 'px';
+    ring.style.top = y + 'px';
+    ring.classList.remove('__firing');
+    void ring.offsetWidth; // restart the CSS animation
+    ring.classList.add('__firing');
+  };
+  window.__suppressEffects = false;
+  document.addEventListener('mousedown', (e) => {
+    cur.classList.add('__pressed');
+    if (!window.__suppressEffects) window.__fireRing(e.clientX, e.clientY);
+  }, true);
   document.addEventListener('mouseup', () => cur.classList.remove('__pressed'), true);
-  window.__pressCursor = () => {
+  window.__pressCursor = (x, y) => {
     cur.classList.add('__pressed');
     setTimeout(() => cur.classList.remove('__pressed'), 180);
+    if (typeof x === 'number') window.__fireRing(x, y);
   };
 
   window.__openDropdown = (selector) => {
@@ -153,9 +197,7 @@ function logClick(ctx) {
 
 // Post-click settle time is deliberately generous (350ms) — the site's own
 // CSS transitions (checkbox fill, tab pill color) need to fully finish and
-// be captured on screen before the segment boundary is logged, or a
-// freeze-frame pad in assembly can land mid-transition and freeze on a
-// half-colored state.
+// be captured on screen before this segment's context closes.
 const CLICK_SETTLE_MS = 350;
 
 async function clickAnimated(page, selector, ctx) {
@@ -218,10 +260,13 @@ async function unlockPage(page) {
   await page.waitForSelector("#gate.is-unlocked", { state: "attached" });
 }
 
-// Each beat: `setup` runs once (navigation/unlock/cursor-init, not tied to
-// any narration segment), then `segments` run in order — each one's `text`
-// is exactly a clause of the approved script, its `action` the on-screen
-// step that clause describes. A timestamp is logged after every segment.
+// Each beat: `setup` runs at the start of EVERY segment's fresh page (not
+// once) — navigation/unlock/cursor-init. `segments` run one per fresh
+// context; each one's `text` is exactly a clause of the approved script,
+// its `action` the on-screen step that clause describes. `replay` (when
+// present) is a fast, unanimated re-application of the state that action
+// leaves behind, run silently at the top of every later segment in the same
+// beat so accumulated progress is still visible on screen.
 const BEATS = [
   {
     name: "01-gate-locked",
@@ -244,12 +289,12 @@ const BEATS = [
       await page.goto(BASE_URL);
       await page.waitForSelector("#gatePassword");
       await initCursor(page);
-      await centerCursor(page);
     },
     segments: [
       {
         text: "It's password-protected for now — bonus buyers get the password at checkout.",
         action: async (page, ctx) => typeAnimated(page, "#gatePassword", GATE_PASSWORD, ctx),
+        replay: async (page) => page.fill("#gatePassword", GATE_PASSWORD),
       },
       {
         text: "Type it in, and you're in.",
@@ -287,32 +332,37 @@ const BEATS = [
     setup: async (page) => {
       await unlockPage(page);
       await initCursor(page);
-      await centerCursor(page);
     },
     segments: [
       {
         text: "Start with BridgeBlueprint.",
         action: async (page, ctx) => clickAnimated(page, '.tab-btn[data-tab="blueprint"]', ctx),
+        replay: async (page) => page.click('.tab-btn[data-tab="blueprint"]'),
       },
       {
         text: "Pick your business type — say, affiliate marketer —",
         action: async (page, ctx) => selectAnimated(page, "#bpBusinessType", "affiliate", ctx),
+        replay: async (page) => page.selectOption("#bpBusinessType", "affiliate"),
       },
       {
         text: "then check the apps you actually run: ConvertKit as your autoresponder,",
         action: async (page, ctx) => clickAnimated(page, '#bpAppChecks input[data-group="ar"][value="convertkit"]', ctx),
+        replay: async (page) => page.check('#bpAppChecks input[data-group="ar"][value="convertkit"]'),
       },
       {
         text: "Facebook and Instagram lead ads,",
         action: async (page, ctx) => clickAnimated(page, '#bpAppChecks input[data-group="src"][value="fb-leads"]', ctx),
+        replay: async (page) => page.check('#bpAppChecks input[data-group="src"][value="fb-leads"]'),
       },
       {
         text: "WarriorPlus for sales,",
         action: async (page, ctx) => clickAnimated(page, '#bpAppChecks input[data-group="com"][value="warriorplus"]', ctx),
+        replay: async (page) => page.check('#bpAppChecks input[data-group="com"][value="warriorplus"]'),
       },
       {
         text: "Slack for team alerts.",
         action: async (page, ctx) => clickAnimated(page, '#bpAppChecks input[data-group="team"][value="slack"]', ctx),
+        replay: async (page) => page.check('#bpAppChecks input[data-group="team"][value="slack"]'),
       },
       {
         text:
@@ -320,8 +370,16 @@ const BEATS = [
         action: async (page, ctx) => {
           await clickAnimated(page, "#bpGenerate", ctx);
           await page.waitForSelector("#bpOutput .bridge-item");
-          await page.locator("#bpOutput .bridge-item").first().scrollIntoViewIfNeeded();
+          // Checking boxes further down the list scrolled the page down —
+          // jump back to the top so the "Your build order" panel and its
+          // header are visible, not just wherever the last checkbox was.
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
           await hold(page, 600);
+        },
+        replay: async (page) => {
+          await page.click("#bpGenerate");
+          await page.waitForSelector("#bpOutput .bridge-item");
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
         },
       },
       {
@@ -349,24 +407,27 @@ const BEATS = [
     setup: async (page) => {
       await unlockPage(page);
       await initCursor(page);
-      await centerCursor(page);
     },
     segments: [
       {
         text: "Next, FollowUp Forge — the part WP Sync doesn't write for you.",
         action: async (page, ctx) => clickAnimated(page, '.tab-btn[data-tab="followup"]', ctx),
+        replay: async (page) => page.click('.tab-btn[data-tab="followup"]'),
       },
       {
         text: "Fill in the offer name, WP Sync;",
         action: async (page, ctx) => typeAnimated(page, "#ffOffer", "WP Sync", ctx),
+        replay: async (page) => page.fill("#ffOffer", "WP Sync"),
       },
       {
         text: "price, $47;",
         action: async (page, ctx) => typeAnimated(page, "#ffPrice", "$47", ctx),
+        replay: async (page) => page.fill("#ffPrice", "$47"),
       },
       {
         text: "one-line angle, kills your $50 a month Zapier bill.",
         action: async (page, ctx) => typeAnimated(page, "#ffAngle", "kills your $50/mo Zapier bill", ctx),
+        replay: async (page) => page.fill("#ffAngle", "kills your $50/mo Zapier bill"),
       },
       {
         text: "Pick a tone — Direct, or Story-driven if you'd rather lead with a narrative —",
@@ -382,6 +443,10 @@ const BEATS = [
           await page.waitForSelector("#ffOutput .email-block");
           await page.locator("#ffOutput .email-block").first().scrollIntoViewIfNeeded();
           await hold(page, 500);
+        },
+        replay: async (page) => {
+          await page.click("#ffGenerate");
+          await page.waitForSelector("#ffOutput .email-block");
         },
       },
       {
@@ -413,28 +478,32 @@ const BEATS = [
     setup: async (page) => {
       await unlockPage(page);
       await initCursor(page);
-      await centerCursor(page);
     },
     segments: [
       {
         text: "Last, LeakCalc.",
         action: async (page, ctx) => clickAnimated(page, '.tab-btn[data-tab="leakcalc"]', ctx),
+        replay: async (page) => page.click('.tab-btn[data-tab="leakcalc"]'),
       },
       {
         text: "Enter 100 monthly leads,",
         action: async (page, ctx) => typeAnimated(page, "#lcLeads", "100", ctx),
+        replay: async (page) => page.fill("#lcLeads", "100"),
       },
       {
         text: "a 40% drop-off,",
         action: async (page, ctx) => typeAnimated(page, "#lcDropoff", "40", ctx),
+        replay: async (page) => page.fill("#lcDropoff", "40"),
       },
       {
         text: "$2 a month in subscriber value,",
         action: async (page, ctx) => typeAnimated(page, "#lcValue", "2", ctx),
+        replay: async (page) => page.fill("#lcValue", "2"),
       },
       {
         text: "and a $49 a month tool you're already paying for.",
         action: async (page, ctx) => typeAnimated(page, "#lcZapierCost", "49", ctx),
+        replay: async (page) => page.fill("#lcZapierCost", "49"),
       },
       {
         text: "Click Calculate.",
@@ -442,6 +511,10 @@ const BEATS = [
           await clickAnimated(page, "#lcCalculate", ctx);
           await page.waitForSelector("#lcOutput .stat-tile");
           await hold(page, 500);
+        },
+        replay: async (page) => {
+          await page.click("#lcCalculate");
+          await page.waitForSelector("#lcOutput .stat-tile");
         },
       },
       {
@@ -475,12 +548,12 @@ const BEATS = [
     setup: async (page) => {
       await unlockPage(page);
       await initCursor(page);
-      await centerCursor(page);
     },
     segments: [
       {
         text: "None of this competes with WP Sync — it's the piece that picks up right where WP Sync leaves off.",
         action: async (page, ctx) => clickAnimated(page, '.tab-btn[data-tab="guide"]', ctx),
+        replay: async (page) => page.click('.tab-btn[data-tab="guide"]'),
       },
       {
         text: "WP Sync builds the bridge and moves the data.",
@@ -524,33 +597,84 @@ const BEATS = [
 
   for (const beat of beatsToRun) {
     const beatDir = path.join(OUTPUT_DIR, beat.name);
-    const context = await browser.newContext({
-      viewport: VIEWPORT,
-      recordVideo: { dir: beatDir, size: VIEWPORT },
-    });
-    const beatStart = Date.now();
-    const page = await context.newPage();
-    const ctx = { beatStart, clicks: [] };
-
-    await beat.setup(page, ctx);
-
-    const segmentsLog = [];
-    for (const seg of beat.segments) {
-      await seg.action(page, ctx);
-      segmentsLog.push({ text: seg.text, tEnd: round((Date.now() - beatStart) / 1000) });
-    }
-    await page.waitForTimeout(400);
-
-    await context.close(); // video only finalizes to disk on context close
-
     fs.mkdirSync(beatDir, { recursive: true });
-    fs.writeFileSync(path.join(beatDir, "segments.json"), JSON.stringify(segmentsLog, null, 2));
-    fs.writeFileSync(path.join(beatDir, "clicks.json"), JSON.stringify(ctx.clicks));
-    console.log(`Recorded beat: ${beat.name} — ${segmentsLog.length} segments, ${ctx.clicks.length} clicks`);
+    const manifest = [];
+    const replaysSoFar = [];
+    // Every segment is its own fresh page (see file header for why), which
+    // means scroll position and cursor position both reset by default —
+    // concatenating segments hard-cut then showed a jarring jump every time
+    // (page snapping back to a different scroll spot, cursor popping back
+    // to center) instead of a continuous recording. Carrying these two
+    // forward and silently restoring them after each new segment's setup
+    // (before its own animated action starts) fixes that.
+    let lastScrollY = null;
+    let lastCursorPos = null;
+
+    for (let i = 0; i < beat.segments.length; i++) {
+      const seg = beat.segments[i];
+      const segDir = path.join(beatDir, `seg${String(i + 1).padStart(2, "0")}`);
+
+      const beatStart = Date.now();
+      const context = await browser.newContext({
+        viewport: VIEWPORT,
+        recordVideo: { dir: segDir, size: VIEWPORT },
+      });
+      const page = await context.newPage();
+      const ctx = { beatStart, clicks: [] };
+
+      await beat.setup(page, ctx);
+      if (beat.cursor && replaysSoFar.length) {
+        await page.evaluate(() => {
+          window.__suppressEffects = true;
+        });
+      }
+      for (const replay of replaysSoFar) {
+        await replay(page);
+      }
+      if (beat.cursor && replaysSoFar.length) {
+        await page.evaluate(() => {
+          window.__suppressEffects = false;
+        });
+      }
+
+      if (i === 0) {
+        if (beat.cursor) await centerCursor(page);
+      } else {
+        if (lastScrollY !== null) {
+          await page.evaluate((y) => window.scrollTo({ top: y, behavior: "instant" }), lastScrollY);
+        }
+        if (beat.cursor && lastCursorPos) {
+          await page.mouse.move(lastCursorPos.x, lastCursorPos.y);
+        }
+        await page.waitForTimeout(150);
+      }
+
+      await seg.action(page, ctx);
+      await page.waitForTimeout(300);
+
+      lastScrollY = await page.evaluate(() => window.scrollY);
+      if (beat.cursor) {
+        lastCursorPos = await page.evaluate(() => {
+          const c = document.getElementById("__fake-cursor");
+          if (!c) return null;
+          return { x: parseFloat(c.style.left) || 0, y: parseFloat(c.style.top) || 0 };
+        });
+      }
+
+      await context.close(); // video only finalizes to disk on context close
+
+      fs.writeFileSync(path.join(segDir, "clicks.json"), JSON.stringify(ctx.clicks));
+      manifest.push({ index: i + 1, text: seg.text, dir: `seg${String(i + 1).padStart(2, "0")}` });
+      if (seg.replay) replaysSoFar.push(seg.replay);
+      console.log(`  ${beat.name} seg${String(i + 1).padStart(2, "0")}: ${ctx.clicks.length} click(s)`);
+    }
+
+    fs.writeFileSync(path.join(beatDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+    console.log(`Recorded beat: ${beat.name} — ${manifest.length} segments`);
   }
 
   await browser.close();
-  console.log(`Done. Recordings in ${OUTPUT_DIR}/<beat-name>/*.webm + segments.json + clicks.json`);
+  console.log(`Done. Recordings in ${OUTPUT_DIR}/<beat-name>/manifest.json + segNN/*.webm + clicks.json`);
 })().catch((e) => {
   console.error(e);
   process.exit(1);

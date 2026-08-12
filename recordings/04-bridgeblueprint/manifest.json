@@ -1,38 +1,47 @@
 [
   {
+    "index": 1,
     "text": "Start with BridgeBlueprint.",
-    "tEnd": 3.297
+    "dir": "seg01"
   },
   {
+    "index": 2,
     "text": "Pick your business type — say, affiliate marketer —",
-    "tEnd": 6.067
+    "dir": "seg02"
   },
   {
+    "index": 3,
     "text": "then check the apps you actually run: ConvertKit as your autoresponder,",
-    "tEnd": 7.306
+    "dir": "seg03"
   },
   {
+    "index": 4,
     "text": "Facebook and Instagram lead ads,",
-    "tEnd": 8.646
+    "dir": "seg04"
   },
   {
+    "index": 5,
     "text": "WarriorPlus for sales,",
-    "tEnd": 9.904
+    "dir": "seg05"
   },
   {
+    "index": 6,
     "text": "Slack for team alerts.",
-    "tEnd": 11.209
+    "dir": "seg06"
   },
   {
+    "index": 7,
     "text": "Click Generate build order, and BridgeBlueprint ranks the bridges for you — WarriorPlus sales first, since a buyer is worth capturing before anything else, then Facebook leads, a refund route to a win-back list, and a Slack alert for new sales, last.",
-    "tEnd": 13.018
+    "dir": "seg07"
   },
   {
+    "index": 8,
     "text": "Every bridge comes with a plain-English reason attached, so you're not guessing why one ranks above another — and because it's built off your actual business type and your actual app stack, you're not getting generic advice, you're getting your build order.",
-    "tEnd": 13.967
+    "dir": "seg08"
   },
   {
+    "index": 9,
     "text": "That's the difference between staring at WP Sync wondering where to start, and knowing exactly what to set up first, second, and third.",
-    "tEnd": 14.468
+    "dir": "seg09"
   }
 ]

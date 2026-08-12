@@ -48,7 +48,7 @@ async function ttsToFile(text, outPath) {
   const beatFilter = process.argv.slice(2);
   const allBeats = fs
     .readdirSync(RECORDINGS_DIR)
-    .filter((d) => fs.existsSync(path.join(RECORDINGS_DIR, d, "segments.json")));
+    .filter((d) => fs.existsSync(path.join(RECORDINGS_DIR, d, "manifest.json")));
   const beats = beatFilter.length ? allBeats.filter((b) => beatFilter.includes(b)) : allBeats;
 
   if (!beatFilter.length || beatFilter.includes("00-hook")) {
@@ -56,10 +56,10 @@ async function ttsToFile(text, outPath) {
   }
 
   for (const beat of beats) {
-    const segments = JSON.parse(fs.readFileSync(path.join(RECORDINGS_DIR, beat, "segments.json")));
-    for (let i = 0; i < segments.length; i++) {
-      const outPath = path.join(AUDIO_DIR, "segments", beat, `seg-${String(i + 1).padStart(2, "0")}.mp3`);
-      await ttsToFile(segments[i].text, outPath);
+    const manifest = JSON.parse(fs.readFileSync(path.join(RECORDINGS_DIR, beat, "manifest.json")));
+    for (const seg of manifest) {
+      const outPath = path.join(AUDIO_DIR, "segments", beat, `seg-${String(seg.index).padStart(2, "0")}.mp3`);
+      await ttsToFile(seg.text, outPath);
     }
   }
 
